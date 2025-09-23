@@ -1,0 +1,27 @@
+---
+- name: Test Ansible Playbook on Localhost
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Create a tmp directory
+      file:
+        path: /home/ec2-user/tmp
+        state: directory
+
+    - name: Create a test file
+      copy:
+        dest: /home/ec2-user/tmp/ansible_test_file.txt
+        content: "This is a test file created by Ansible."
+
+    - name: Install tree package (Linux only)
+      become: true
+      package:
+        name: tree
+        state: present
+
+    - name: Print a debug message
+      debug:
+        msg: "Playbook executed successfully!"
+ 

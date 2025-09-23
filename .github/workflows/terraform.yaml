@@ -25,6 +25,10 @@ jobs:
  terraform:
    name: "Terraform Infrastructure CICD"
    runs-on: ubuntu-latest
+   permissions:
+     contents: write
+     pull-requests: write
+     repository-projects: write
    defaults:
      run:
        shell: bash
