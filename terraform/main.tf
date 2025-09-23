@@ -1,7 +1,5 @@
 provider "aws" {
   region     = "us-west-1"
-  access_key = AWS_ACCESS_KEY_ID
-  secret_key = AWS_SECRET_ACCESS_KEY
 }
 
 # Create a security group to allow SSH access
