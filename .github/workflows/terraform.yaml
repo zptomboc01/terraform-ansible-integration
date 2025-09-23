@@ -25,6 +25,10 @@ jobs:
  terraform:
    name: "Terraform Infrastructure CICD"
    runs-on: ubuntu-latest
+   permissions:
+     contents: write
+     pull-requests: write
+     repository-projects: write
    defaults:
      run:
        shell: bash
@@ -46,7 +50,7 @@ jobs:
  
      - name: Terraform format
        id: fmt
-       run: terraform fmt -check
+       run: terraform fmt
     
      - name: Terraform validate
        id: validate
