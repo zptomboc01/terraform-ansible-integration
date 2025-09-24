@@ -2,8 +2,6 @@ provider "aws" {
   region = "us-west-1"
 }
 
-data "github_ip_ranges" "main" {}
-
 # Create a security group to allow SSH access
 resource "aws_security_group" "allow_ssh" {
   name_prefix = "allow-ssh-ansible-"
@@ -27,7 +25,7 @@ resource "aws_security_group" "allow_ssh" {
   }
 
   ingress {
-    description = "Allow SSH from local machine IP"
+    description = "Allow SSH from local machine IP (Zeit)"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
@@ -40,17 +38,6 @@ resource "aws_security_group" "allow_ssh" {
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["203.177.160.22/32"]
-  }
-
-  dynamic "ingress" {
-    for_each    = data.github_ip_ranges.main.actions_ipv4
-    content {
-      description = "Allow GitHub Actions"
-      from_port   = 22
-      to_port     = 22
-      protocol    = "tcp"
-      cidr_blocks = [ingress.value]
-    }
   }
 
   egress {
@@ -83,66 +70,21 @@ resource "aws_instance" "web" {
   }
 
   tags = {
-    Name = "TerraAnsible"
+    Name = "TerraAnsible-TEST"
   }
 
-  provisioner "file" {
-    source      = "test_playbook.yml"
-    destination = "/home/ec2-user/test_playbook.yml"
-  }
-
-  provisioner "remote-exec" {
-    inline = [
-      "chmod +x /home/ec2-user/test_playbook.yml",
-    ]
-  }
-
-  connection {
-    type        = "ssh"
-    user        = "ec2-user"
-    private_key = file("DTS0428.pem")
-    host        = self.public_ip
-  }
+  user_data = <<-EOF
+    #!/bin/bash
+    echo "${base64encode(file("test_playbook.yml"))}" | base64 -d > /home/ec2-user/test_playbook.yml
+    chmod +x /home/ec2-user/test_playbook.yml
+    sudo yum update -y
+    sudo yum install -y software-properties-common
+    sudo yum install -y ansible
+    ansible-playbook /home/ec2-user/test_playbook.yml
+    EOF
 }
 
 // Output the public IP to use with Ansible
 output "web_server_ip" {
   value = aws_instance.web.public_ip
-}
-
-resource "null_resource" "install_ansible" {
-  depends_on = [aws_instance.web]
-
-  provisioner "remote-exec" {
-    inline = [
-      "sudo yum update",
-      "sudo yum install -y software-properties-common",
-      "sudo add-apt-repository --yes --update ppa:ansible/ansible",
-      "sudo yum install -y ansible"
-    ]
-  }
-
-  connection {
-    type        = "ssh"
-    host        = aws_instance.web.public_ip
-    user        = "ec2-user"
-    private_key = file("DTS0428.pem")
-  }
-}
-
-resource "null_resource" "test-playbook" {
-  depends_on = [null_resource.install_ansible]
-
-  provisioner "remote-exec" {
-    inline = [
-      "ansible-playbook test_playbook.yml"
-    ]
-  }
-
-  connection {
-    type        = "ssh"
-    host        = aws_instance.web.public_ip
-    user        = "ec2-user"
-    private_key = file("DTS0428.pem")
-  }
 }
