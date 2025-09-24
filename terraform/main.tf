@@ -1,6 +1,8 @@
 provider "aws" {
-  region     = "us-west-1"
+  region = "us-west-1"
 }
+
+data "github_ip_ranges" "main" {}
 
 # Create a security group to allow SSH access
 resource "aws_security_group" "allow_ssh" {
@@ -38,6 +40,17 @@ resource "aws_security_group" "allow_ssh" {
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["203.177.160.22/32"]
+  }
+
+  dynamic "ingress" {
+    for_each    = data.github_ip_ranges.main.actions_ipv4
+    content {
+      description = "Allow GitHub Actions"
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = [ingress.value]
+    }
   }
 
   egress {
