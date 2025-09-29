@@ -82,6 +82,12 @@ jobs:
      - name: Checkout the repository to the runner
        uses: actions/checkout@v4
 
+     - name: Setup Python for security tools
+       uses: actions/setup-python@v4
+       with:
+         python-version: '3.x'
+         cache: 'pip'
+
      - name: Install security scanning tools
        run: |
          pip install checkov
@@ -91,11 +97,13 @@ jobs:
        id: checkov
        run: |
          checkov -d . --framework terraform --output cli --output sarif --output-file-path console,checkov-report.sarif
+         echo "Files created:"
+         ls -la *.sarif || echo "No SARIF files found"
        continue-on-error: true
 
      - name: Upload Checkov SARIF results
        uses: github/codeql-action/upload-sarif@v3
-       if: always()
+       if: always() && hashFiles('checkov-report.sarif') != ''
        with:
          sarif_file: checkov-report.sarif
          category: checkov
@@ -115,15 +123,36 @@ jobs:
 
      - name: Run Ansible Lint
        id: ansible-lint
-       run: ansible-lint test_playbook.yml --format sarif --output-file ansible-lint-report.sarif
+       run: |
+         ansible-lint test_playbook.yml --format sarif > ansible-lint-report.sarif || echo "Ansible lint completed with issues"
+         ls -la *.sarif
        continue-on-error: true
 
      - name: Upload Ansible Lint SARIF results
        uses: github/codeql-action/upload-sarif@v3
-       if: always()
+       if: always() && hashFiles('ansible-lint-report.sarif') != ''
        with:
          sarif_file: ansible-lint-report.sarif
          category: ansible-lint
+
+     - name: Verify SARIF files
+       if: always()
+       run: |
+         echo "=== SARIF Files Status ==="
+         if [ -f "checkov-report.sarif" ]; then
+           echo "✅ Checkov SARIF file exists ($(wc -c < checkov-report.sarif) bytes)"
+         else
+           echo "❌ Checkov SARIF file missing"
+         fi
+         
+         if [ -f "ansible-lint-report.sarif" ]; then
+           echo "✅ Ansible Lint SARIF file exists ($(wc -c < ansible-lint-report.sarif) bytes)"
+         else
+           echo "❌ Ansible Lint SARIF file missing"
+         fi
+         
+         echo "=== All files in directory ==="
+         ls -la
 
      - name: Security scan summary
        if: always()
