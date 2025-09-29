@@ -22,17 +22,16 @@ env:
  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
  
 jobs:
- terraform:
-   name: "Terraform Infrastructure CICD"
+ validate:
+   name: "Validation & Formatting"
    runs-on: ubuntu-latest
-   permissions:
-     contents: write
-     pull-requests: write
-     repository-projects: write
    defaults:
      run:
        shell: bash
        working-directory: ./terraform
+   outputs:
+     fmt-outcome: ${{ steps.fmt.outcome }}
+     validate-outcome: ${{ steps.validate.outcome }}
  
    steps:
      - name: Checkout the repository to the runner
@@ -43,12 +42,6 @@ jobs:
        with:
          terraform_version: latest
 
-     - name: Setup Python for Ansible Lint
-       uses: actions/setup-python@v4
-       with:
-         python-version: '3.x'
-         cache: 'pip'
-
      - name: Cache Terraform providers
        uses: actions/cache@v3
        with:
@@ -56,11 +49,6 @@ jobs:
          key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
          restore-keys: |
            ${{ runner.os }}-terraform-
-
-     - name: Install security scanning tools
-       run: |
-         pip install checkov
-         pip install ansible-lint
     
      - name: Terraform init
        id: init
@@ -74,17 +62,48 @@ jobs:
        id: validate
        run: terraform validate -json
 
+ security-scan:
+   name: "Security Scanning"
+   runs-on: ubuntu-latest
+   needs: validate
+   permissions:
+     security-events: write
+     contents: read
+   defaults:
+     run:
+       shell: bash
+       working-directory: ./terraform
+   outputs:
+     checkov-outcome: ${{ steps.checkov.outcome }}
+     tflint-outcome: ${{ steps.tflint.outcome }}
+     ansible-lint-outcome: ${{ steps.ansible-lint.outcome }}
+
+   steps:
+     - name: Checkout the repository to the runner
+       uses: actions/checkout@v4
+
+     - name: Setup Python for security tools
+       uses: actions/setup-python@v4
+       with:
+         python-version: '3.x'
+         cache: 'pip'
+
+     - name: Install security scanning tools
+       run: |
+         pip install checkov
+         pip install ansible-lint
+
      - name: Run Checkov security scan
        id: checkov
        run: |
-         checkov -d ./terraform --framework terraform --output cli --output sarif --output-file-path console,checkov-report.sarif
+         checkov -d . --framework terraform --output cli --output sarif --output-file-path console,checkov-report.sarif
        continue-on-error: true
 
      - name: Upload Checkov SARIF results
        uses: github/codeql-action/upload-sarif@v2
        if: always()
        with:
-         sarif_file: checkov-report.sarif
+         sarif_file: ./terraform/checkov-report.sarif
          category: checkov
 
      - name: Setup TFLint
@@ -97,19 +116,19 @@ jobs:
 
      - name: Run TFLint scan
        id: tflint
-       run: tflint --format compact ./terraform
+       run: tflint --format compact .
        continue-on-error: true
 
      - name: Run Ansible Lint
        id: ansible-lint
-       run: ansible-lint terraform/test_playbook.yml --format sarif --output-file ansible-lint-report.sarif
+       run: ansible-lint test_playbook.yml --format sarif --output-file ansible-lint-report.sarif
        continue-on-error: true
 
      - name: Upload Ansible Lint SARIF results
        uses: github/codeql-action/upload-sarif@v2
        if: always()
        with:
-         sarif_file: ansible-lint-report.sarif
+         sarif_file: ./terraform/ansible-lint-report.sarif
          category: ansible-lint
 
      - name: Security scan summary
@@ -119,28 +138,62 @@ jobs:
          echo "- Checkov: ${{ steps.checkov.outcome }}" >> $GITHUB_STEP_SUMMARY
          echo "- TFLint: ${{ steps.tflint.outcome }}" >> $GITHUB_STEP_SUMMARY
          echo "- Ansible Lint: ${{ steps.ansible-lint.outcome }}" >> $GITHUB_STEP_SUMMARY
+
+ plan:
+   name: "Terraform Plan"
+   runs-on: ubuntu-latest
+   needs: [validate, security-scan]
+   if: github.event_name == 'pull_request'
+   permissions:
+     contents: read
+     pull-requests: write
+   defaults:
+     run:
+       shell: bash
+       working-directory: ./terraform
+   outputs:
+     plan-outcome: ${{ steps.plan.outcome }}
+
+   steps:
+     - name: Checkout the repository to the runner
+       uses: actions/checkout@v4
+ 
+     - name: Setup Terraform with specified version on the runner
+       uses: hashicorp/setup-terraform@v3
+       with:
+         terraform_version: latest
+
+     - name: Cache Terraform providers
+       uses: actions/cache@v3
+       with:
+         path: ~/.terraform.d/plugin-cache
+         key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
+         restore-keys: |
+           ${{ runner.os }}-terraform-
+    
+     - name: Terraform init
+       run: terraform init
  
      - name: Terraform plan
        id: plan
-       if: github.event_name == 'pull_request'
        run: |
          terraform plan -no-color -input=false -out=tfplan
          terraform show -no-color tfplan
        continue-on-error: true
-    
-     - uses: actions/github-script@v6
-       if: github.event_name == 'pull_request'
+
+     - name: Comment PR with plan results
+       uses: actions/github-script@v6
        env:
          PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
        with:
          script: |
-           const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
-           #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
-           #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+           const output = `#### Terraform Format and Style 🖌\`${{ needs.validate.outputs.fmt-outcome }}\`
+           #### Terraform Initialization ⚙️\`success\`
+           #### Terraform Validation 🤖\`${{ needs.validate.outputs.validate-outcome }}\`
            #### Security Scans 🔒
-           - Checkov: \`${{ steps.checkov.outcome }}\`
-           - TFLint: \`${{ steps.tflint.outcome }}\`
-           - Ansible Lint: \`${{ steps.ansible-lint.outcome }}\`
+           - Checkov: \`${{ needs.security-scan.outputs.checkov-outcome }}\`
+           - TFLint: \`${{ needs.security-scan.outputs.tflint-outcome }}\`
+           - Ansible Lint: \`${{ needs.security-scan.outputs.ansible-lint-outcome }}\`
            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
  
            <details><summary>Show Plan</summary>
@@ -158,20 +211,59 @@ jobs:
              repo: context.repo.repo,
              body: output
            })
- 
+
      - name: Terraform Plan Status
        if: steps.plan.outcome == 'failure'
        run: exit 1
 
+ deploy:
+   name: "Terraform Apply"
+   runs-on: ubuntu-latest
+   needs: [validate, security-scan]
+   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+   permissions:
+     contents: read
+   defaults:
+     run:
+       shell: bash
+       working-directory: ./terraform
+   environment:
+     name: production
+     url: ${{ steps.output.outputs.url }}
+
+   steps:
+     - name: Checkout the repository to the runner
+       uses: actions/checkout@v4
+ 
+     - name: Setup Terraform with specified version on the runner
+       uses: hashicorp/setup-terraform@v3
+       with:
+         terraform_version: latest
+
+     - name: Cache Terraform providers
+       uses: actions/cache@v3
+       with:
+         path: ~/.terraform.d/plugin-cache
+         key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
+         restore-keys: |
+           ${{ runner.os }}-terraform-
+    
+     - name: Terraform init
+       run: terraform init
+
      - name: Check security scan results
-       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
        run: |
-         if [ "${{ steps.checkov.outcome }}" = "failure" ]; then
+         if [ "${{ needs.security-scan.outputs.checkov-outcome }}" = "failure" ]; then
            echo "❌ Checkov found critical security issues. Deployment blocked."
            exit 1
          fi
          echo "✅ Security scans completed. Proceeding with deployment."
  
      - name: Terraform Apply
-       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+       id: apply
        run: terraform apply -auto-approve -input=false
+
+     - name: Get outputs
+       id: output
+       run: |
+         echo "url=http://$(terraform output -raw web_server_ip)" >> $GITHUB_OUTPUT
