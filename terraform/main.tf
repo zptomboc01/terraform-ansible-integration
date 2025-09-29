@@ -40,6 +40,14 @@ resource "aws_security_group" "allow_ssh" {
     cidr_blocks = ["203.177.160.22/32"]
   }
 
+  ingress {
+    description = "Allow SSH from VSR (WiFi-Access-2)"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["160.202.58.38/32"]
+  }
+
   egress {
     description = "Allow HTTP access"
     from_port   = 80
