@@ -32,34 +32,100 @@ jobs:
    defaults:
      run:
        shell: bash
-       # We keep Terraform files in the terraform directory.
        working-directory: ./terraform
  
    steps:
      - name: Checkout the repository to the runner
-       uses: actions/checkout@v2
+       uses: actions/checkout@v4
  
      - name: Setup Terraform with specified version on the runner
-       uses: hashicorp/setup-terraform@v2
+       uses: hashicorp/setup-terraform@v3
        with:
-         terraform_version: 1.13.2
+         terraform_version: latest
+
+     - name: Setup Python for Ansible Lint
+       uses: actions/setup-python@v4
+       with:
+         python-version: '3.x'
+         cache: 'pip'
+
+     - name: Cache Terraform providers
+       uses: actions/cache@v3
+       with:
+         path: ~/.terraform.d/plugin-cache
+         key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
+         restore-keys: |
+           ${{ runner.os }}-terraform-
+
+     - name: Install security scanning tools
+       run: |
+         pip install checkov
+         pip install ansible-lint
     
      - name: Terraform init
        id: init
        run: terraform init
  
-     - name: Terraform format
+     - name: Terraform format check
        id: fmt
-       run: terraform fmt
+       run: terraform fmt -check -diff
     
      - name: Terraform validate
        id: validate
-       run: terraform validate
+       run: terraform validate -json
+
+     - name: Run Checkov security scan
+       id: checkov
+       run: |
+         checkov -d ./terraform --framework terraform --output cli --output sarif --output-file-path console,checkov-report.sarif
+       continue-on-error: true
+
+     - name: Upload Checkov SARIF results
+       uses: github/codeql-action/upload-sarif@v2
+       if: always()
+       with:
+         sarif_file: checkov-report.sarif
+         category: checkov
+
+     - name: Setup TFLint
+       uses: terraform-linters/setup-tflint@v3
+       with:
+         tflint_version: v0.48.0
+     
+     - name: Initialize TFLint
+       run: tflint --init
+
+     - name: Run TFLint scan
+       id: tflint
+       run: tflint --format compact ./terraform
+       continue-on-error: true
+
+     - name: Run Ansible Lint
+       id: ansible-lint
+       run: ansible-lint terraform/test_playbook.yml --format sarif --output-file ansible-lint-report.sarif
+       continue-on-error: true
+
+     - name: Upload Ansible Lint SARIF results
+       uses: github/codeql-action/upload-sarif@v2
+       if: always()
+       with:
+         sarif_file: ansible-lint-report.sarif
+         category: ansible-lint
+
+     - name: Security scan summary
+       if: always()
+       run: |
+         echo "## Security Scan Results" >> $GITHUB_STEP_SUMMARY
+         echo "- Checkov: ${{ steps.checkov.outcome }}" >> $GITHUB_STEP_SUMMARY
+         echo "- TFLint: ${{ steps.tflint.outcome }}" >> $GITHUB_STEP_SUMMARY
+         echo "- Ansible Lint: ${{ steps.ansible-lint.outcome }}" >> $GITHUB_STEP_SUMMARY
  
      - name: Terraform plan
        id: plan
        if: github.event_name == 'pull_request'
-       run: terraform plan -no-color -input=false
+       run: |
+         terraform plan -no-color -input=false -out=tfplan
+         terraform show -no-color tfplan
        continue-on-error: true
     
      - uses: actions/github-script@v6
@@ -71,6 +137,10 @@ jobs:
            const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+           #### Security Scans 🔒
+           - Checkov: \`${{ steps.checkov.outcome }}\`
+           - TFLint: \`${{ steps.tflint.outcome }}\`
+           - Ansible Lint: \`${{ steps.ansible-lint.outcome }}\`
            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
  
            <details><summary>Show Plan</summary>
@@ -92,6 +162,15 @@ jobs:
      - name: Terraform Plan Status
        if: steps.plan.outcome == 'failure'
        run: exit 1
+
+     - name: Check security scan results
+       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+       run: |
+         if [ "${{ steps.checkov.outcome }}" = "failure" ]; then
+           echo "❌ Checkov found critical security issues. Deployment blocked."
+           exit 1
+         fi
+         echo "✅ Security scans completed. Proceeding with deployment."
  
      - name: Terraform Apply
        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
