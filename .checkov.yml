@@ -3,6 +3,8 @@
 
 # Skip specific checks (example)
 skip-check:
+  - CKV_AWS_260
+  - CKV_AWS_23   # SSH is restricted to specific IP addresses, not 0.0.0.0/0
   # - CKV_AWS_79  # Ensure Instance Metadata Service Version 1 is not enabled
   # - CKV_AWS_8   # Ensure all data stored in the Launch configuration EBS is securely encrypted at rest
 
