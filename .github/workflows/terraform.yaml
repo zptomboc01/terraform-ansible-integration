@@ -136,7 +136,7 @@ jobs:
 
      - name: Run TFLint scan
        id: tflint
-       run: tflint --format compact .
+       run: tflint --format compact
        continue-on-error: true
 
      - name: Run Ansible Lint
