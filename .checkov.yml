@@ -1,0 +1,39 @@
+# Checkov configuration file
+# https://www.checkov.io/2.Basics/CLI%20Command%20Reference.html
+
+# Skip specific checks (example)
+skip-check:
+  - CKV_AWS_260
+  - CKV_AWS_23   # SSH is restricted to specific IP addresses, not 0.0.0.0/0
+  # - CKV_AWS_79  # Ensure Instance Metadata Service Version 1 is not enabled
+  # - CKV_AWS_8   # Ensure all data stored in the Launch configuration EBS is securely encrypted at rest
+
+# Framework to run (can specify multiple)
+framework:
+  - terraform
+
+# Output formats
+output:
+  - cli
+  - sarif
+
+# Fail on severity (LOW, MEDIUM, HIGH, CRITICAL)
+check:
+  - HIGH
+  - CRITICAL
+
+# Enable compact mode for better readability
+compact: true
+
+# Download external modules before scanning
+download-external-modules: true
+
+# Quiet mode (reduce output verbosity)
+quiet: false
+
+# Enable soft-fail mode (don't fail the build on security issues)
+soft-fail: false
+
+# Exclude paths (if needed)
+# skip-path:
+#   - path/to/exclude

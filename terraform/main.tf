@@ -1,3 +1,14 @@
+terraform {
+  required_version = ">= 1.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
 provider "aws" {
   region = "us-west-1"
 }
@@ -5,8 +16,7 @@ provider "aws" {
 # Create a security group to allow SSH access
 resource "aws_security_group" "allow_ssh" {
   name_prefix = "allow-ssh-ansible-"
-
-  #name = "GroupTerraAnsible"
+  description = "Security group for Terraform Ansible integration"
 
   ingress {
     description = "Allow HTTP access"
@@ -38,6 +48,14 @@ resource "aws_security_group" "allow_ssh" {
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["203.177.160.22/32"]
+  }
+
+  ingress {
+    description = "Allow SSH from VSR (WiFi-Access-2)"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["160.202.58.38/32"]
   }
 
   egress {

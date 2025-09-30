@@ -6,22 +6,24 @@
 
   tasks:
     - name: Create a tmp directory
-      file:
+      ansible.builtin.file:
         path: /home/ec2-user/tmp
         state: directory
+        mode: '0755'
 
     - name: Create a test file
-      copy:
+      ansible.builtin.copy:
         dest: /home/ec2-user/tmp/ansible_test_file.txt
         content: "This is a test file created by Ansible."
+        mode: '0644'
 
     - name: Install tree package (Linux only)
       become: true
-      package:
+      ansible.builtin.package:
         name: tree
         state: present
 
     - name: Print a debug message
-      debug:
+      ansible.builtin.debug:
         msg: "Playbook executed successfully!"
  
