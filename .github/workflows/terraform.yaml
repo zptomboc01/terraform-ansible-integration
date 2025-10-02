@@ -3,23 +3,62 @@
 name: "Terraform Infrastructure CICD Pipeline"
  
 on:
- push:
-   branches:
-   - main
-   paths:
-   - terraform/**
- pull_request:
-   branches:
-   - main
-   paths:
-   - terraform/**
+  push:
+    branches:
+    - main
+    paths:
+    - terraform/**
+  pull_request:
+    branches:
+    - main
+    paths:
+    - terraform/**
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+        - development
+      terraform_action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+        - plan
+        - apply
+        - destroy
+      skip_security_scan:
+        description: 'Skip security scanning (emergency deployments only)'
+        required: false
+        default: false
+        type: boolean
+      log_level:
+        description: 'Terraform log level'
+        required: false
+        default: 'INFO'
+        type: choice
+        options:
+        - TRACE
+        - DEBUG
+        - INFO
+        - WARN
+        - ERROR
  
 env:
- # verbosity setting for Terraform logs
- TF_LOG: INFO
- # Credentials for deployment to AWS
- AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
- AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  # verbosity setting for Terraform logs
+  TF_LOG: ${{ github.event.inputs.log_level || 'INFO' }}
+  # Credentials for deployment to AWS
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  # Manual trigger environment
+  TARGET_ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+  TERRAFORM_ACTION: ${{ github.event.inputs.terraform_action || 'plan' }}
  
 jobs:
  validate:
@@ -66,6 +105,7 @@ jobs:
    name: "Security Scanning"
    runs-on: ubuntu-latest
    needs: validate
+   if: github.event.inputs.skip_security_scan != 'true'
    permissions:
      security-events: write
      contents: read
@@ -174,7 +214,9 @@ jobs:
    name: "Terraform Plan"
    runs-on: ubuntu-latest
    needs: [validate, security-scan]
-   if: github.event_name == 'pull_request'
+   if: |
+     (github.event_name == 'pull_request') || 
+     (github.event_name == 'workflow_dispatch' && github.event.inputs.terraform_action == 'plan')
    permissions:
      contents: read
      pull-requests: write
@@ -251,7 +293,9 @@ jobs:
    name: "Terraform Apply"
    runs-on: ubuntu-latest
    needs: [validate, security-scan]
-   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+   if: |
+     (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+     (github.event_name == 'workflow_dispatch' && github.event.inputs.terraform_action == 'apply')
    permissions:
      contents: read
    defaults:
@@ -259,7 +303,7 @@ jobs:
        shell: bash
        working-directory: ./terraform
    environment:
-     name: production
+     name: ${{ github.event.inputs.environment || 'production' }}
      url: ${{ steps.output.outputs.url }}
 
    steps:
@@ -283,13 +327,23 @@ jobs:
        run: terraform init
 
      - name: Check security scan results
+       if: needs.security-scan.result != 'skipped'
        run: |
          if [ "${{ needs.security-scan.outputs.checkov-outcome }}" = "failure" ]; then
            echo "❌ Checkov found critical security issues. Deployment blocked."
            exit 1
          fi
          echo "✅ Security scans completed. Proceeding with deployment."
- 
+
+     - name: Display manual trigger info
+       if: github.event_name == 'workflow_dispatch'
+       run: |
+         echo "## Manual Deployment Triggered" >> $GITHUB_STEP_SUMMARY
+         echo "- **Environment**: ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+         echo "- **Action**: ${{ github.event.inputs.terraform_action }}" >> $GITHUB_STEP_SUMMARY
+         echo "- **Triggered by**: @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+         echo "- **Skip Security**: ${{ github.event.inputs.skip_security_scan }}" >> $GITHUB_STEP_SUMMARY
+
      - name: Terraform Apply
        id: apply
        run: terraform apply -auto-approve -input=false
@@ -298,3 +352,47 @@ jobs:
        id: output
        run: |
          echo "url=http://$(terraform output -raw web_server_ip)" >> $GITHUB_OUTPUT
+
+ destroy:
+  name: "Terraform Destroy"
+  runs-on: ubuntu-latest
+  needs: [validate]
+  if: github.event_name == 'workflow_dispatch' && github.event.inputs.terraform_action == 'destroy'
+  permissions:
+    contents: read
+  defaults:
+    run:
+      shell: bash
+      working-directory: ./terraform
+  environment:
+    name: ${{ github.event.inputs.environment || 'production' }}
+
+  steps:
+    - name: Checkout the repository to the runner
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform with specified version on the runner
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: latest
+
+    - name: Cache Terraform providers
+      uses: actions/cache@v3
+      with:
+        path: ~/.terraform.d/plugin-cache
+        key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
+        restore-keys: |
+          ${{ runner.os }}-terraform-
+
+    - name: Terraform init
+      run: terraform init
+
+    - name: Confirm destruction
+      run: |
+        echo "## ⚠️ DESTRUCTIVE OPERATION WARNING" >> $GITHUB_STEP_SUMMARY
+        echo "About to destroy infrastructure in **${{ github.event.inputs.environment }}** environment" >> $GITHUB_STEP_SUMMARY
+        echo "Triggered by: @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+
+    - name: Terraform Destroy
+      id: destroy
+      run: terraform destroy -auto-approve -input=false
