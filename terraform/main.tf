@@ -82,7 +82,11 @@ resource "aws_instance" "web" {
   key_name                    = "DTS0428"
   security_groups             = [aws_security_group.allow_ssh.name]
   vpc_security_group_ids      = [aws_security_group.allow_ssh.id]
-
+  
+  # Performance and monitoring optimizations
+  ebs_optimized               = true   # CKV_AWS_135: Enable EBS optimization
+  monitoring                   = true   # CKV_AWS_126: Enable detailed monitoring
+  
   root_block_device {
     encrypted = true
   }

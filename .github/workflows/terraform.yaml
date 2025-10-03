@@ -144,10 +144,10 @@ jobs:
        id: checkov
        run: |
          # Run Checkov with CLI output for logs
-         checkov -d . --framework terraform --output cli || true
+         checkov -d . --config-file .checkov.yml --framework terraform --output cli || true
          
          # Run Checkov again with SARIF output to file
-         checkov -d . --framework terraform --output sarif > checkov-report.sarif || true
+         checkov -d . --config-file .checkov.yml --framework terraform --output sarif > checkov-report.sarif || true
          
          echo "Files created:"
          ls -la || echo "Directory listing failed"
@@ -157,7 +157,6 @@ jobs:
            echo "❌ Checkov SARIF file not found, creating empty SARIF file"
            echo '{"version": "2.1.0", "runs": [{"tool": {"driver": {"name": "checkov"}}, "results": []}]}' > checkov-report.sarif
          fi
-       continue-on-error: true
 
      - name: Upload Checkov SARIF results
        uses: github/codeql-action/upload-sarif@v3
@@ -177,7 +176,6 @@ jobs:
      - name: Run TFLint scan
        id: tflint
        run: tflint --format compact
-       continue-on-error: true
 
      - name: Run Ansible Lint
        id: ansible-lint
@@ -193,7 +191,6 @@ jobs:
            echo '{"version": "2.1.0", "runs": [{"tool": {"driver": {"name": "ansible-lint"}}, "results": []}]}' > ansible-lint-report.sarif
          fi
          ls -la *.sarif || echo "No SARIF files found"
-       continue-on-error: true
 
      - name: Upload Ansible Lint SARIF results
        uses: github/codeql-action/upload-sarif@v3
@@ -252,7 +249,6 @@ jobs:
        run: |
          terraform plan -no-color -input=false -out=tfplan
          terraform show -no-color tfplan
-       continue-on-error: true
 
      - name: Comment PR with plan results
        uses: actions/github-script@v6
