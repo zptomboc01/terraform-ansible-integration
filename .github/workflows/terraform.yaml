@@ -137,6 +137,7 @@ jobs:
 
      - name: Install security scanning tools
        run: |
+         pip install "importlib-metadata<8.0.0,>=6.0.0"
          pip install checkov
          pip install ansible-lint
 
@@ -144,10 +145,10 @@ jobs:
        id: checkov
        run: |
          # Run Checkov with CLI output for logs
-         checkov -d . --config-file .checkov.yml --framework terraform --output cli || true
+         checkov -d . --config-file ../.checkov.yml --framework terraform --output cli
          
          # Run Checkov again with SARIF output to file
-         checkov -d . --config-file .checkov.yml --framework terraform --output sarif > checkov-report.sarif || true
+         checkov -d . --config-file ../.checkov.yml --framework terraform --output sarif > checkov-report.sarif
          
          echo "Files created:"
          ls -la || echo "Directory listing failed"
@@ -181,7 +182,7 @@ jobs:
        id: ansible-lint
        run: |
          # Run Ansible Lint with SARIF output
-         ansible-lint test_playbook.yml --format sarif > ansible-lint-report.sarif || true
+         ansible-lint test_playbook.yml --format sarif > ansible-lint-report.sarif
          
          echo "Ansible Lint files created:"
          if [ -f "ansible-lint-report.sarif" ]; then
