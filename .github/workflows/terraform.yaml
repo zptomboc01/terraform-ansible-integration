@@ -651,8 +651,8 @@ jobs:
                             console.log(`Closed issue #${issue.number} due to successful pipeline`);
                           }
 
-                    - name: Success summary
-                      run: |
-                        echo "## ✅ Pipeline Success" >> $GITHUB_STEP_SUMMARY
-                        echo "" >> $GITHUB_STEP_SUMMARY
-                        echo "All jobs completed successfully. Any related failure issues have been automatically closed." >> $GITHUB_STEP_SUMMARY
+     - name: Success summary
+       run: |
+         echo "## ✅ Pipeline Success" >> $GITHUB_STEP_SUMMARY
+         echo "" >> $GITHUB_STEP_SUMMARY
+         echo "All jobs completed successfully. Any related failure issues have been automatically closed." >> $GITHUB_STEP_SUMMARY
