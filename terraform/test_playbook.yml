@@ -2,28 +2,29 @@
 - name: Configure Web Servers
   hosts: localhost
   connection: local
-  become: yes
+  become: true
 
   tasks:
     - name: Ensure Nginx is installed
-      yum:
+      ansible.builtin.yum:
         name: nginx
-        state: latest
+        state: present  # Fixed: package-latest
 
     - name: Ensure Nginx service is running and enabled on boot
-      service:
+      ansible.builtin.service:
         name: nginx
         state: started
         enabled: true
 
     - name: Deploy static website content
-      copy:
+      ansible.builtin.copy:
         content: "<h1>Hello from Terraform and Ansible!</h1>"
         dest: /usr/share/nginx/html/index.html
+        mode: '0644'  # Fixed: risky-file-permissions
       notify: Restart Nginx
 
   handlers:
     - name: Restart Nginx
-      service:
+      ansible.builtin.service:
         name: nginx
         state: restarted
