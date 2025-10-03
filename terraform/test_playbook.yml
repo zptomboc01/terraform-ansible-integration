@@ -1,28 +1,29 @@
 ---
-- name: Test Ansible Playbook on Localhost
+- name: Configure Web Servers
   hosts: localhost
   connection: local
-  gather_facts: false
+  become: yes
 
   tasks:
-    - name: Create a tmp directory
-      ansible.builtin.file:
-        path: /home/ec2-user/tmp
-        state: directory
-        mode: '0755'
+    - name: Ensure Nginx is installed
+      yum:
+        name: nginx
+        state: latest
 
-    - name: Create a test file
-      ansible.builtin.copy:
-        dest: /home/ec2-user/tmp/ansible_test_file.txt
-        content: "This is a test file created by Ansible."
-        mode: '0644'
+    - name: Ensure Nginx service is running and enabled on boot
+      service:
+        name: nginx
+        state: started
+        enabled: true
 
-    - name: Install tree package (Linux only)
-      become: true
-      ansible.builtin.package:
-        name: tree
-        state: present
+    - name: Deploy static website content
+      copy:
+        content: "<h1>Hello from Terraform and Ansible!</h1>"
+        dest: /usr/share/nginx/html/index.html
+      notify: Restart Nginx
 
-    - name: Print a debug message
-      ansible.builtin.debug:
-        msg: "Playbook executed successfully!"
+  handlers:
+    - name: Restart Nginx
+      service:
+        name: nginx
+        state: restarted
