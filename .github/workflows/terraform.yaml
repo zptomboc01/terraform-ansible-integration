@@ -625,34 +625,34 @@ jobs:
                issue_number: issue.number,
                body: `✅ **Pipeline Succeeded** - Run #${runNumber}
 
-The pipeline is now working correctly. This failure has been resolved.
+                The pipeline is now working correctly. This failure has been resolved.
 
-**Successful Jobs:**
-- Validate: ${{ needs.validate.result || 'skipped' }}
-- Security Scan: ${{ needs.security-scan.result || 'skipped' }}
-- Plan: ${{ needs.plan.result || 'skipped' }}
-- Deploy: ${{ needs.deploy.result || 'skipped' }}
-- Destroy: ${{ needs.destroy.result || 'skipped' }}
+                **Successful Jobs:**
+                - Validate: ${{ needs.validate.result || 'skipped' }}
+                - Security Scan: ${{ needs.security-scan.result || 'skipped' }}
+                - Plan: ${{ needs.plan.result || 'skipped' }}
+                - Deploy: ${{ needs.deploy.result || 'skipped' }}
+                - Destroy: ${{ needs.destroy.result || 'skipped' }}
 
-**Run Link:** [View Successful Run](https://github.com/${repo.owner}/${repo.repo}/actions/runs/${context.runId})
+                **Run Link:** [View Successful Run](https://github.com/${repo.owner}/${repo.repo}/actions/runs/${context.runId})
 
----
-*Automatically resolved by successful pipeline run*`
-             });
+                ---
+                *Automatically resolved by successful pipeline run*`
+                            });
 
-             await github.rest.issues.update({
-               owner: repo.owner,
-               repo: repo.repo,
-               issue_number: issue.number,
-               state: 'closed',
-               state_reason: 'completed'
-             });
+                            await github.rest.issues.update({
+                              owner: repo.owner,
+                              repo: repo.repo,
+                              issue_number: issue.number,
+                              state: 'closed',
+                              state_reason: 'completed'
+                            });
 
-             console.log(`Closed issue #${issue.number} due to successful pipeline`);
-           }
+                            console.log(`Closed issue #${issue.number} due to successful pipeline`);
+                          }
 
-     - name: Success summary
-       run: |
-         echo "## ✅ Pipeline Success" >> $GITHUB_STEP_SUMMARY
-         echo "" >> $GITHUB_STEP_SUMMARY
-         echo "All jobs completed successfully. Any related failure issues have been automatically closed." >> $GITHUB_STEP_SUMMARY
+                    - name: Success summary
+                      run: |
+                        echo "## ✅ Pipeline Success" >> $GITHUB_STEP_SUMMARY
+                        echo "" >> $GITHUB_STEP_SUMMARY
+                        echo "All jobs completed successfully. Any related failure issues have been automatically closed." >> $GITHUB_STEP_SUMMARY
