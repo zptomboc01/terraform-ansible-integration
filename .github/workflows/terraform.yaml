@@ -408,3 +408,251 @@ jobs:
     - name: Terraform Destroy
       id: destroy
       run: terraform destroy -auto-approve -input=false
+
+ failure-handler:
+   name: "Create Issue on Failure"
+   runs-on: ubuntu-latest
+   needs: [validate, security-scan, plan, deploy, destroy]
+   if: always() && (needs.validate.result == 'failure' || needs.security-scan.result == 'failure' || needs.plan.result == 'failure' || needs.deploy.result == 'failure' || needs.destroy.result == 'failure')
+   permissions:
+     contents: read
+     issues: write
+   
+   steps:
+     - name: Checkout repository
+       uses: actions/checkout@v4
+
+     - name: Create failure issue
+       uses: actions/github-script@v6
+       with:
+         github-token: ${{ secrets.GITHUB_TOKEN }}
+         script: |
+           const workflow = context.workflow;
+           const runId = context.runId;
+           const runNumber = context.runNumber;
+           const actor = context.actor;
+           const repo = context.repo;
+           const sha = context.sha;
+           
+           // Determine which jobs failed
+           const failedJobs = [];
+           const jobResults = {
+             'validate': '${{ needs.validate.result }}',
+             'security-scan': '${{ needs.security-scan.result }}',
+             'plan': '${{ needs.plan.result }}',
+             'deploy': '${{ needs.deploy.result }}',
+             'destroy': '${{ needs.destroy.result }}'
+           };
+           
+           for (const [job, result] of Object.entries(jobResults)) {
+             if (result === 'failure') {
+               failedJobs.push(job);
+             }
+           }
+           
+           // Get trigger information
+           const triggerInfo = context.eventName === 'workflow_dispatch' 
+             ? `Manual trigger by @${actor}\n- Environment: ${{ github.event.inputs.environment || 'production' }}\n- Action: ${{ github.event.inputs.terraform_action || 'plan' }}`
+             : `Automated trigger (${context.eventName})`;
+           
+           // Create issue title
+           const title = `🚨 Pipeline Failure: ${failedJobs.join(', ')} - Run #${runNumber}`;
+           
+           // Create issue body
+           const body = `## Pipeline Failure Report
+           
+**Workflow:** ${workflow}
+**Run ID:** [${runId}](https://github.com/${repo.owner}/${repo.repo}/actions/runs/${runId})
+**Run Number:** ${runNumber}
+**Commit:** [\`${sha.substring(0, 7)}\`](https://github.com/${repo.owner}/${repo.repo}/commit/${sha})
+**Triggered by:** @${actor}
+**Event:** ${context.eventName}
+
+### Trigger Details
+${triggerInfo}
+
+### Failed Jobs
+${failedJobs.map(job => `- ❌ **${job}**`).join('\n')}
+
+### Job Results Summary
+- **Validate**: ${{ needs.validate.result || 'skipped' }}
+- **Security Scan**: ${{ needs.security-scan.result || 'skipped' }}
+- **Plan**: ${{ needs.plan.result || 'skipped' }}
+- **Deploy**: ${{ needs.deploy.result || 'skipped' }}
+- **Destroy**: ${{ needs.destroy.result || 'skipped' }}
+
+### Quick Actions
+- [ ] Review [workflow logs](https://github.com/${repo.owner}/${repo.repo}/actions/runs/${runId})
+- [ ] Check for infrastructure changes needed
+- [ ] Verify AWS credentials and permissions
+- [ ] Review security scan failures
+- [ ] Update Terraform configuration if needed
+
+### Error Investigation
+1. **Check the logs:** Click the run link above to see detailed logs
+2. **Review recent changes:** Look at commits since last successful run
+3. **Verify environment:** Ensure target environment is accessible
+4. **Check dependencies:** Verify all external services are available
+
+---
+*This issue was automatically created by the CI/CD pipeline*
+*Created at: ${new Date().toISOString()}*`;
+
+           // Check if a similar issue already exists (avoid duplicates)
+           const existingIssues = await github.rest.issues.listForRepo({
+             owner: repo.owner,
+             repo: repo.repo,
+             state: 'open',
+             labels: 'pipeline-failure',
+             per_page: 10
+           });
+
+           const recentFailureIssue = existingIssues.data.find(issue => 
+             issue.title.includes('Pipeline Failure') && 
+             (Date.now() - new Date(issue.created_at).getTime()) < 60 * 60 * 1000 // Within last hour
+           );
+
+           if (recentFailureIssue) {
+             // Update existing issue instead of creating new one
+             const updateBody = `${recentFailureIssue.body}
+
+---
+
+## Additional Failure - Run #${runNumber}
+**Time:** ${new Date().toISOString()}
+**Failed Jobs:** ${failedJobs.join(', ')}
+**Run Link:** [View Run](https://github.com/${repo.owner}/${repo.repo}/actions/runs/${runId})`;
+
+             await github.rest.issues.update({
+               owner: repo.owner,
+               repo: repo.repo,
+               issue_number: recentFailureIssue.number,
+               body: updateBody
+             });
+
+             await github.rest.issues.createComment({
+               owner: repo.owner,
+               repo: repo.repo,
+               issue_number: recentFailureIssue.number,
+               body: `🔄 **Pipeline failed again** - Run #${runNumber}\n\nFailed jobs: ${failedJobs.join(', ')}\n[View logs](https://github.com/${repo.owner}/${repo.repo}/actions/runs/${runId})`
+             });
+
+             console.log(`Updated existing issue #${recentFailureIssue.number}`);
+           } else {
+             // Create new issue
+             const issue = await github.rest.issues.create({
+               owner: repo.owner,
+               repo: repo.repo,
+               title: title,
+               body: body,
+               labels: [
+                 'pipeline-failure',
+                 'bug',
+                 'priority-high',
+                 ...failedJobs.map(job => `failed-${job}`)
+               ],
+               assignees: [actor] // Assign to the person who triggered the workflow
+             });
+
+             console.log(`Created issue #${issue.data.number}: ${issue.data.html_url}`);
+             
+             // Add comment with additional context if it's a manual trigger
+             if (context.eventName === 'workflow_dispatch') {
+               await github.rest.issues.createComment({
+                 owner: repo.owner,
+                 repo: repo.repo,
+                 issue_number: issue.data.number,
+                 body: `📋 **Manual Trigger Context**
+                 
+- **Environment:** ${{ github.event.inputs.environment || 'production' }}
+- **Action:** ${{ github.event.inputs.terraform_action || 'plan' }}
+- **Skip Security:** ${{ github.event.inputs.skip_security_scan || 'false' }}
+- **Log Level:** ${{ github.event.inputs.log_level || 'INFO' }}
+
+Please review the manual trigger parameters above when investigating this failure.`
+               });
+             }
+           }
+
+     - name: Notify via summary
+       run: |
+         echo "## 🚨 Pipeline Failure Detected" >> $GITHUB_STEP_SUMMARY
+         echo "" >> $GITHUB_STEP_SUMMARY
+         echo "An issue has been automatically created to track this failure." >> $GITHUB_STEP_SUMMARY
+         echo "" >> $GITHUB_STEP_SUMMARY
+         echo "### Failed Jobs:" >> $GITHUB_STEP_SUMMARY
+         echo "- Validate: ${{ needs.validate.result || 'skipped' }}" >> $GITHUB_STEP_SUMMARY
+         echo "- Security Scan: ${{ needs.security-scan.result || 'skipped' }}" >> $GITHUB_STEP_SUMMARY
+         echo "- Plan: ${{ needs.plan.result || 'skipped' }}" >> $GITHUB_STEP_SUMMARY
+         echo "- Deploy: ${{ needs.deploy.result || 'skipped' }}" >> $GITHUB_STEP_SUMMARY
+         echo "- Destroy: ${{ needs.destroy.result || 'skipped' }}" >> $GITHUB_STEP_SUMMARY
+         echo "" >> $GITHUB_STEP_SUMMARY
+         echo "Please check the Issues tab for the automatically created failure ticket."
+
+ success-handler:
+   name: "Close Issues on Success"
+   runs-on: ubuntu-latest
+   needs: [validate, security-scan, plan, deploy, destroy]
+   if: always() && (needs.validate.result == 'success' || needs.validate.result == 'skipped') && (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped') && (needs.plan.result == 'success' || needs.plan.result == 'skipped') && (needs.deploy.result == 'success' || needs.deploy.result == 'skipped') && (needs.destroy.result == 'success' || needs.destroy.result == 'skipped')
+   permissions:
+     contents: read
+     issues: write
+   
+   steps:
+     - name: Close related failure issues
+       uses: actions/github-script@v6
+       with:
+         github-token: ${{ secrets.GITHUB_TOKEN }}
+         script: |
+           const repo = context.repo;
+           const runNumber = context.runNumber;
+           const actor = context.actor;
+           
+           // Find open pipeline failure issues
+           const openIssues = await github.rest.issues.listForRepo({
+             owner: repo.owner,
+             repo: repo.repo,
+             state: 'open',
+             labels: 'pipeline-failure',
+             per_page: 20
+           });
+
+           for (const issue of openIssues.data) {
+             // Close the issue with a success comment
+             await github.rest.issues.createComment({
+               owner: repo.owner,
+               repo: repo.repo,
+               issue_number: issue.number,
+               body: `✅ **Pipeline Succeeded** - Run #${runNumber}
+
+The pipeline is now working correctly. This failure has been resolved.
+
+**Successful Jobs:**
+- Validate: ${{ needs.validate.result || 'skipped' }}
+- Security Scan: ${{ needs.security-scan.result || 'skipped' }}
+- Plan: ${{ needs.plan.result || 'skipped' }}
+- Deploy: ${{ needs.deploy.result || 'skipped' }}
+- Destroy: ${{ needs.destroy.result || 'skipped' }}
+
+**Run Link:** [View Successful Run](https://github.com/${repo.owner}/${repo.repo}/actions/runs/${context.runId})
+
+---
+*Automatically resolved by successful pipeline run*`
+             });
+
+             await github.rest.issues.update({
+               owner: repo.owner,
+               repo: repo.repo,
+               issue_number: issue.number,
+               state: 'closed',
+               state_reason: 'completed'
+             });
+
+             console.log(`Closed issue #${issue.number} due to successful pipeline`);
+           }
+
+     - name: Success summary
+       run: |
+         echo "## ✅ Pipeline Success" >> $GITHUB_STEP_SUMMARY
+         echo "" >> $GITHUB_STEP_SUMMARY
+         echo "All jobs completed successfully. Any related failure issues have been automatically closed." >> $GITHUB_STEP_SUMMARY
