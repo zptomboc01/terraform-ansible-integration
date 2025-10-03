@@ -26,4 +26,3 @@
     - name: Print a debug message
       ansible.builtin.debug:
         msg: "Playbook executed successfully!"
- 

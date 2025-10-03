@@ -1,0 +1,90 @@
+name: Pipeline Failure
+description: Report a CI/CD pipeline failure
+title: "🚨 Pipeline Failure: [Brief Description]"
+labels: ["pipeline-failure", "bug", "priority-high"]
+assignees:
+  - zptomboc01
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a pipeline failure! This template helps us track and resolve CI/CD issues quickly.
+
+  - type: input
+    id: run-id
+    attributes:
+      label: GitHub Actions Run ID
+      description: The run ID or link to the failed workflow
+      placeholder: "https://github.com/zptomboc01/terraform-ansible-integration/actions/runs/123456789"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: trigger-type
+    attributes:
+      label: How was the pipeline triggered?
+      options:
+        - Pull Request
+        - Push to main
+        - Manual (workflow_dispatch)
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: failed-jobs
+    attributes:
+      label: Which jobs failed?
+      description: Select all that apply
+      options:
+        - label: Validation & Formatting
+        - label: Security Scanning
+        - label: Terraform Plan
+        - label: Terraform Apply/Deploy
+        - label: Terraform Destroy
+
+  - type: textarea
+    id: error-details
+    attributes:
+      label: Error Details
+      description: Copy and paste the relevant error messages or logs
+      placeholder: Paste error logs here...
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: |
+        Any additional context about the failure:
+        - Recent changes made
+        - Environment details
+        - Expected vs actual behavior
+      placeholder: Provide any additional context...
+
+  - type: checkboxes
+    id: investigation-steps
+    attributes:
+      label: Investigation Steps Taken
+      description: What have you already tried?
+      options:
+        - label: Checked the workflow logs
+        - label: Verified AWS credentials
+        - label: Reviewed recent commits
+        - label: Checked for infrastructure changes
+        - label: Verified environment access
+        - label: Re-ran the failed workflow
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority Level
+      description: How urgent is this failure?
+      options:
+        - label: "🔴 Critical - Production down"
+        - label: "🟡 High - Blocking deployments"
+        - label: "🟢 Medium - Can work around"
+        - label: "⚪ Low - Minor issue"
+    validations:
+      required: true

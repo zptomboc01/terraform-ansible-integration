@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📚 Documentation
+    url: https://github.com/zptomboc01/terraform-ansible-integration/blob/main/README.md
+    about: Check the documentation for common issues and setup instructions
+  - name: 🚀 Feature Request
+    url: https://github.com/zptomboc01/terraform-ansible-integration/discussions
+    about: Suggest new features or improvements via Discussions
